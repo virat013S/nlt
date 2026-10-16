@@ -39,14 +39,15 @@ def fish_path() -> str | None:
 
 def run_live(cmd: str, *, cwd: str | None = None, tail_len: int = TAIL_KEEP,
              silence_timeout: float = 25.0) -> ExecResult:
-    if os.name != "posix":
-        return _run_plain(cmd, cwd)
-
+    # Refusal first — refusing a bare interactive app is universal, not a pty thing.
     if is_interactive_bare(cmd):
         head = (cmd or "").strip().split()[0] if (cmd or "").strip() else "?"
         say(BAD(f"— refused: '{head}' opens its own interactive session — "
                 "run that one in your own terminal —"))
         return ExecResult(status=-3, refused=True)
+
+    if os.name != "posix":
+        return _run_plain(cmd, cwd)
 
     shell = fish_path() or "/bin/sh"
     try:
