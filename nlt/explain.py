@@ -5,8 +5,9 @@ import os
 from dataclasses import dataclass
 
 from . import engine, risk, style
+from .brain import chat as brain_chat
+from .brain import pattern_rescue
 from .highlight import paint_cmd
-from .ollama import chat_json
 from .risk import is_interactive_bare
 from .speak import Persona
 from .style import (
@@ -45,7 +46,8 @@ def _system(persona: Persona) -> str:
     return persona.system + "\n\n" + SCHEMA
 
 
-def diagnose(ctx: Context, persona: Persona, model: str) -> dict:
+def diagnose(ctx: Context, persona: Persona, model: str | None, *,
+             no_ai: bool = False) -> dict:
     user = (
         f"shell: fish\n"
         f"cwd: {ctx.cwd or os.getcwd()}\n"
@@ -62,7 +64,10 @@ def diagnose(ctx: Context, persona: Persona, model: str) -> dict:
         )
     if ctx.user_note:
         user += f"the human says: {ctx.user_note}\n"
-    blob = chat_json(model, _system(persona), user) or {}
+    blob, label = brain_chat(_system(persona), user, preferred=model, no_ai=no_ai)
+    if blob is None:
+        say(MUTE(f"(brain: {label})"))
+        blob = pattern_rescue(ctx) or {}
     out = {
         "cause": str(blob.get("cause", "")).strip(),
         "why": str(blob.get("why", "")).strip(),
@@ -120,12 +125,13 @@ def confirm_fix(v: dict, *, dry: bool = False, assume_yes: bool = False) -> tupl
     return ("abort", "")
 
 
-def rescue_flow(ctx: Context, persona: Persona, model: str, *, dry: bool = False,
-                assume_yes: bool = False, print_only: bool = False) -> int:
+def rescue_flow(ctx: Context, persona: Persona, model: str | None, *, dry: bool = False,
+                assume_yes: bool = False, print_only: bool = False,
+                no_ai: bool = False) -> int:
     """Diagnose → sign-off → execute. print_only: emit the confirmed fix on
     stdout verbatim — fish's ctrl-g evals it in your real session.
     Returns the final known status."""
-    v = diagnose(ctx, persona, model)
+    v = diagnose(ctx, persona, model, no_ai=no_ai)
     render_verdict(v)
     action, fix = confirm_fix(v, dry=dry, assume_yes=assume_yes)
 
@@ -162,7 +168,7 @@ def rescue_flow(ctx: Context, persona: Persona, model: str, *, dry: bool = False
             ctx.user_note = note
         sub = Context(command=fix, status=res.status, cwd=ctx.cwd, tail=res.tail,
                       user_note=ctx.user_note if not note else "")
-        v = diagnose(sub, persona, model)
+        v = diagnose(sub, persona, model, no_ai=no_ai)
         render_verdict(v)
         action, fix = confirm_fix(v, dry=False, assume_yes=assume_yes)
         if action != "run" or not fix:

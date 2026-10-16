@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .explain import Context, rescue_flow
 from .speak import get as get_persona
-from .style import BAD, MUTE, say
+from .style import MUTE, say
 
 
 def latest_state(prefer_pid: int | None = None) -> dict | None:
@@ -56,7 +56,7 @@ def _pid_of(p: Path) -> int:
     return int(m) if m.isdigit() else -1
 
 
-def run(persona_id: str, model: str, *, no_ai: bool = False, prefer_pid: int | None = None,
+def run(persona_id: str, model: str | None, *, no_ai: bool = False, prefer_pid: int | None = None,
         dry: bool = False, print_only: bool = False, assume_yes: bool = False) -> int:
     st = latest_state(prefer_pid)
     if not st or not st["cmd"]:
@@ -65,12 +65,8 @@ def run(persona_id: str, model: str, *, no_ai: bool = False, prefer_pid: int | N
     if st["status"] == 0:
         say(MUTE(f"last command was healthy ({st['cmd']!r} → 0) — nothing to fix."))
         return 0
-
     persona = get_persona(persona_id)
     say(MUTE(f"last failure: {st['cmd']!r} → status {st['status']} (cwd {st['cwd'] or '?'})"))
     ctx = Context(command=st["cmd"], status=st["status"], cwd=st["cwd"])
-    if no_ai:
-        say(BAD("model disabled — diagnosis needs it. drop --no-ai or run `nlt doctor`"))
-        return 1
-    return rescue_flow(ctx, persona, model, dry=dry, assume_yes=assume_yes,
+    return rescue_flow(ctx, persona, model, no_ai=no_ai, dry=dry, assume_yes=assume_yes,
                        print_only=print_only)

@@ -1,7 +1,7 @@
 """A tiny fish-aware command painter — nlt colors commands the way fish would."""
 from __future__ import annotations
 
-from .style import BAD, DIM, GLOW, OK, WARN
+from .style import BAD, DIM, GLOW, OK, WARN, paint
 
 FISH_BUILTINS = {
     "set", "if", "while", "for", "function", "begin", "end", "echo", "test",
@@ -45,6 +45,6 @@ def paint_cmd(cmd: str) -> str:
             sep = tok[-1] + sep
             tok = tok[:-1]
         core = _paint_head(tok, depth) if tok else tok
-        out.append(core + (DIM(sep) if sep and tok else sep))
+        out.append(core + (paint(sep, DIM) if sep and tok else sep))
         depth = 0 if sep else depth + 1
     return " ".join(out) if out else cmd

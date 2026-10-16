@@ -4,8 +4,9 @@ from __future__ import annotations
 import os
 
 from . import engine, risk, style
+from .brain import chat as brain_chat
+from .brain import pattern_tasks
 from .highlight import paint_cmd
-from .ollama import chat_json
 from .risk import is_interactive_bare
 from .speak import Persona
 from .style import BAD, GLOW, MUTE, OK, WARN, ask_text, say
@@ -22,10 +23,21 @@ TASK_SCHEMA = (
 )
 
 
-def translate(task: str, persona: Persona, model: str, cwd: str) -> dict:
+def translate(task: str, persona: Persona, model: str | None, cwd: str, *,
+              no_ai: bool = False) -> dict:
+    """Best available brain → normalized plan. model=None is fine: the chain
+    tries local, then cloud, and the pattern brain is always there."""
     system = persona.system + "\n\n" + TASK_SCHEMA
     user = f"shell: fish\ncwd: {cwd or os.getcwd()}\ntask: {task}"
-    blob = chat_json(model, system, user) or {}
+    blob, label = brain_chat(system, user, preferred=model, no_ai=no_ai)
+    if blob is None:
+        psteps, note = pattern_tasks(task)
+        blob = {"steps": psteps, "note": note}
+    say(MUTE(f"(brain: {label})"))
+    return _normalize(blob)
+
+
+def _normalize(blob: dict) -> dict:
     steps: list[dict] = []
     seen: set[str] = set()
     dropped = 0
@@ -76,8 +88,8 @@ def confirm_plan(p: dict, *, dry: bool = False, assume_yes: bool = False) -> str
     return ask_text("run it? [run/abort]", default="abort")
 
 
-def run_steps(p: dict, persona: Persona, model: str, cwd: str, *,
-              assume_yes: bool = False) -> int:
+def run_steps(p: dict, persona: Persona, model: str | None, cwd: str, *,
+              assume_yes: bool = False, no_ai: bool = False) -> int:
     from .explain import Context, rescue_flow
     cwd = cwd or os.getcwd()
     for i, s in enumerate(p["steps"]):
@@ -96,7 +108,7 @@ def run_steps(p: dict, persona: Persona, model: str, cwd: str, *,
             return res.status
         if answer.lower() not in ("diag", ""):
             ctx.user_note = answer
-        final = rescue_flow(ctx, persona, model, assume_yes=assume_yes)
+        final = rescue_flow(ctx, persona, model, assume_yes=assume_yes, no_ai=no_ai)
         if final != 0:
             return final
     say()
@@ -104,9 +116,9 @@ def run_steps(p: dict, persona: Persona, model: str, cwd: str, *,
     return 0
 
 
-def do_task(task: str, persona: Persona, model: str, *, dry: bool = False,
-            assume_yes: bool = False, cwd: str = "") -> int:
-    plan = translate(task, persona, model, cwd)
+def do_task(task: str, persona: Persona, model: str | None, *, dry: bool = False,
+            assume_yes: bool = False, cwd: str = "", no_ai: bool = False) -> int:
+    plan = translate(task, persona, model, cwd, no_ai=no_ai)
     render_plan(plan, task, persona)
     if not plan["steps"]:
         say(BAD("the plan came back empty — try rephrasing the task."))
@@ -118,4 +130,4 @@ def do_task(task: str, persona: Persona, model: str, *, dry: bool = False,
     if mode == "run-preview":
         say(WARN("(headless: plan shown only. rerun with --yes to let nlt act.)"))
         return 0
-    return run_steps(plan, persona, model, cwd, assume_yes=assume_yes)
+    return run_steps(plan, persona, model, cwd, assume_yes=assume_yes, no_ai=no_ai)

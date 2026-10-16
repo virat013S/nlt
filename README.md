@@ -2,7 +2,7 @@
 
 [![tests](https://github.com/virat013S/nlt/actions/workflows/tests.yml/badge.svg)](https://github.com/virat013S/nlt/actions/workflows/tests.yml)
 
-A **local AI assistant that lives inside your fish shell**. Two things it does:
+A **terminal that speaks human**. Two things it does:
 
 1. **Rescue** — a command failed? Press **`ctrl-g`** (or type `nlt`). nlt reads
    the failure, tells you what went wrong, and offers the fix. You sign off on
@@ -12,20 +12,21 @@ A **local AI assistant that lives inside your fish shell**. Two things it does:
    fish commands come out, you confirm, they run. Failed? nlt asks you what
    happened (or reads the output itself) and tries again.
 
-Everything runs **locally on Ollama**. No cloud, no keys, no telemetry.
+**Zero AI setup required.** A built-in pattern brain turns everyday English
+into fish with plain arithmetic — no model, no daemon, no download. Smarter
+brains are *optional upgrades*, never requirements:
+
+| tier | brain | needs |
+|------|-------|-------|
+| 1 | local ollama | only if YOU install + start it (fully private, free) |
+| 2 | cloud api | only a key: `OPENAI_API_KEY` / `GROQ_API_KEY` / `OPENROUTER_API_KEY` / `TOGETHER_API_KEY` (no install) |
+| 3 | **pattern brain (built-in)** | **nothing — ships with nlt, always works** |
+
+Best available brain wins, automatically. If the top tier hiccoughs, nlt
+falls down the chain mid-sentence and still answers.
+
 Nothing is executed without your sign-off, and **your password is handled by
 sudo alone** — nlt never sees it.
-
-```
-✦ make /tmp/party and write "amen" into guest.txt there
-   1. mkdir -p /tmp/party [mutates things]
-
-✦ incorrect path
-   the one of the paths doesn't exist
-
-→  mkdir /tmp/party [mutates things]
-(run this fix [r/N]?)
-```
 
 ## Installing
 
@@ -37,25 +38,34 @@ cd nlt
 python3 -m pip install --user .          # or pipx install .
 ```
 
-Give it a brain (local, free):
+That's the whole setup. It works right now:
 
 ```bash
-ollama pull gemma3:1b   # tiny & fine
-ollama pull gemma3:4b   # noticeably smarter for multi-step tasks
+nlt "make a folder called rex"           # pattern brain: mkdir -p rex
+nlt "find jpg files in downloads"
+nlt what system am I on                  # quotes optional
 ```
 
-Wire it into fish:
+Optional upgrades, in order of pain:
+
+```bash
+# tier 2 — smarter, no install, pennies: export any cloud key
+export GROQ_API_KEY=...                  # or OPENAI_API_KEY / OPENROUTER_API_KEY
+export NLT_OPENAI_MODEL=gpt-4o-mini      # optional model pick
+
+# tier 1 — private & free: install ollama (ollama.com), then
+ollama pull gemma3:1b                    # tiny & fine
+ollama pull gemma3:4b                    # noticeably smarter for multi-step tasks
+```
+
+See what nlt sees: `nlt brain`. Wire it into fish:
 
 ```bash
 nlt fish install        # ctrl-g rescue + failure capture + completions
 exec fish               # reload
 ```
 
-Health check:
-
-```bash
-nlt doctor
-```
+Health check: `nlt doctor`.
 
 ## The daily loop
 
@@ -106,6 +116,9 @@ confirmed fix in your session), `alt-h` as an alternative.
 
 Model is picked automatically (`llama3` > `qwen` > `gemma` …), or force one:
 `nlt --model gemma3:4b "..."`. Set `OLLAMA_HOST` if the server isn't local.
+Running solely on brain power (`--no-ai`) keeps every call pattern-only.
+Cloud routing: `NLT_OPENAI_BASE` overrides the endpoint, `NLT_OPENAI_MODEL`
+the model — any OpenAI-compatible server works.
 
 ## Files
 

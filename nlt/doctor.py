@@ -5,7 +5,8 @@ import shutil
 import subprocess
 import sys
 
-from . import __version__, fishconf, ollama
+from . import __version__, fishconf
+from .brain import chain_report
 from .style import BAD, GLOW, MUTE, OK, WARN, paint, say
 
 
@@ -28,13 +29,14 @@ def run() -> int:
     rows.append(("fish shell", f"{fish} ({vers})" if fish
                  else "not found — nlt works standalone, just less integrated", bool(fish)))
 
-    models = ollama.ping()
-    if models:
-        model = ollama.pick_model(models)
-        rows.append(("ollama", "up · " + ", ".join(models), True))
-        rows.append(("default brain", model or "—", bool(model)))
-    else:
-        rows.append(("ollama", "not reachable — `ollama serve` or install (ollama.com)", False))
+    models = None
+    try:
+        from .ollama import ping
+        models = ping(timeout=1.0)
+    except Exception:
+        models = None
+    rows.append(("ollama (tier 1)", "up · " + ", ".join(models) if models
+                 else "not running — optional, not required", True))
 
     rows.append(("fish integration", fishconf.status_line(), True))
 
@@ -43,9 +45,10 @@ def run() -> int:
         icon = OK("✓") if fine else BAD("✗")
         say(f"  {icon} {paint(f'{name:<17}', '1')} {MUTE(str(val))}")
 
-    if not models:
-        say()
-        say(WARN("→ bring a brain: `ollama pull gemma3:1b` (tiny) or `nlt model pull gemma3:4b` (better)"))
+    say()
+    say(GLOW("brain chain (best available wins):"))
+    say(paint(chain_report(), "2"))
+
     if not fish:
         say()
         say(WARN("→ fish-first design; other shells get `nlt '<task>'` only"))
