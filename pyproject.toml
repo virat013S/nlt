@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nlt"
+version = "1.0.0"
+description = "The Natural Language Terminal — a local AI assistant living inside your fish shell: diagnoses failed commands, runs your plain-English tasks as real commands."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+keywords = ["fish", "shell", "terminal", "ollama", "cli", "ai", "natural-language", "assistant"]
+classifiers = [
+    "Environment :: Console",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: Terminals",
+]
+
+[project.scripts]
+nlt = "nlt.cli:main"
+
+[tool.setuptools]
+packages = ["nlt"]
