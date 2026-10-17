@@ -6,6 +6,6 @@ Zero AI setup required: a built-in pattern brain does the everyday work,
 local ollama or a cloud API key are optional upgrades.
 """
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 APP = "nlt"
 MARKER = "# nlt:generated"

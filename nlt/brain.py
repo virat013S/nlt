@@ -17,6 +17,7 @@ import re
 import shutil
 import urllib.request
 
+from . import toolbox
 from .ollama import chat_json, pick_model, ping
 from .style import MUTE, say
 
@@ -180,6 +181,7 @@ _WHY = {
     "battery": "charge percentage",
     "weather": "a quick look out the window",
     "chmod": "make it executable",
+    "nmap": "network scan — careful on nets that aren't yours",
 }
 
 # -- literal-command passthrough: type the command itself, run it as typed --
@@ -216,6 +218,8 @@ def passthrough_task(raw: str) -> dict | None:
     base = words[0].rsplit("/", 1)[-1].lower()
     if base in FILLERS:
         return None
+    if base in ("install", "download", "setup"):
+        return None  # English package verbs first — the brain turns these into intent
     if (base not in BUILTIN_HEADS and shutil.which(words[0]) is None
             and not words[0].startswith(("./", "/", "~/"))):
         return None
@@ -378,7 +382,15 @@ def pattern_tasks(t: str) -> tuple[list[dict], str]:
         if url:
             add(f"curl -fLO {url}", _WHY["download"])
         else:
-            hint = "download what? give me the link"
+            obj = _tail_noun(t, r"\b(?:download|wget)\b")
+            pkg, note = toolbox.fix(obj) if obj else ("", "")
+            if pkg and (pkg.lower() in toolbox.pool() or note):
+                add(f"sudo {'pacman -S --needed' if _arch_like() else 'apt install'} {pkg}",
+                    _WHY["download"]
+                    + (" — downloads mean installs here" if not note else note))
+            else:
+                hint = ("download what? give me the link, "
+                        "or name a package to install")
 
     elif re.search(r"\b(services?|daemons?|systemctl|systemd)\b", t):
         m = re.search(rf"\b({PATH_RX})\s+(?:services?|daemons?|units?)\b", t)
@@ -460,7 +472,20 @@ def pattern_tasks(t: str) -> tuple[list[dict], str]:
         else:
             hint = "delete what? name the exact target — deletions are never guessed"
 
-    elif re.search(r"\b(open|view|show|read|display|cat)\b", t):
+    elif re.search(r"\bnmap\b", t) or re.search(r"\bscan\b.*\b(ports?|network|hosts?)\b", t):
+        if re.search(r"\b(network|lan|the net)\b", t):
+            add(f"nmap -sn {toolbox.local_net()}", _WHY["nmap"])
+        else:
+            host = _about(t)
+            if not host or host.lower() in STOPWORDS:
+                host = _tail_noun(t, r"\b(?:nmap|scan)\b")
+            if host and host.lower() not in ("ports", "port", "host", "hosts"):
+                add(f"nmap {host}", _WHY["nmap"])
+            else:
+                add("nmap localhost", _WHY["nmap"])
+
+    elif re.search(r"\b(open|view|show|read|display|cat)\b", t) \
+            and not re.search(r"\b(ports?|listening|nmap)\b", t):
         inner = re.search(rf"\b(?:readme|file|contents)\s*(?:of|in|for)\s+({PATH_RX})", t)
         if inner and inner.group(1).lower() in STOPWORDS:
             inner = None
@@ -492,8 +517,15 @@ def pattern_tasks(t: str) -> tuple[list[dict], str]:
         elif mgr:
             add(f"{mgr.group(1)} install {mgr.group(2)}", _WHY["install"])
         elif _pkg_name(t):
-            add(f"sudo {'pacman -S --needed' if _arch_like() else 'apt install'} {_pkg_name(t)}",
-                _WHY["install"])
+            pkg, note = toolbox.fix(_pkg_name(t))
+            exact = pkg.lower() in toolbox.pool()
+            if not exact and not note:
+                near = toolbox.suggest(pkg, 2)
+                hint = (f"{pkg} isn't a repo package or a command I know"
+                        + (f" — did you mean {', '.join(near)}?" if near else ""))
+            else:
+                add(f"sudo {'pacman -S --needed' if _arch_like() else 'apt install'} {pkg}",
+                    _WHY["install"] + (f" — {note}" if note else ""))
         else:
             hint = "install what? name the package"
 
@@ -533,9 +565,10 @@ def pattern_tasks(t: str) -> tuple[list[dict], str]:
     if steps:
         return steps, "pattern brain — plain arithmetic, no model"
     if hint:
-        return [], hint
+        return [], hint + toolbox.suggest_note(orig)
     return [], ("the pattern brain didn't recognize that sentence — name things clearly, "
-                "or add a brain: see `nlt brain` (ollama optional, cloud key optional, all optional)")
+                "or add a brain: see `nlt brain` (ollama optional, cloud key optional, all optional)"
+                ) + toolbox.suggest_note(orig)
 
 
 # ================================================================= rescue ==
@@ -548,9 +581,13 @@ def pattern_rescue(ctx) -> dict | None:
     head = tokens[0] if tokens else "?"
 
     if status == 127:
+        sug = toolbox.suggest(head)
+        near = f" — did you mean `{sug[0]}`?" if sug else ""
         return {
-            "cause": f"`{head}` is not a command on your PATH",
-            "why": "either not installed or a typo — nlt won't guess without a model; check first.",
+            "cause": f"`{head}` is not a command on your PATH{near}",
+            "why": ("typo most likely, or not installed — check first; "
+                    "nlt won't install anything without you." + (
+                        f" `help with {sug[0]}` prints its cheat sheet." if sug else "")),
             "fix": f"which {head}; or echo '{head} is not installed — install it with your package manager'",
             "risk": "none",
         }

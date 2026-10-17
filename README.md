@@ -96,6 +96,23 @@ phrases, weather, battery, RAM, disk, logs, services, processes, greps,
 downloads, kill/sign-off tasks. Anything the pattern brain can't map,
 it hands back with a hint instead of guessing.
 
+## Spell rescue + the toolbox
+
+- **Did-you-mean built in.** `install firefoks` → nlt finds `firefox`,
+  builds the install plan for it and stamps the plan with
+  *"assumed firefoks → firefox — abort if wrong"*. You confirm, so a
+  bad guess can never run by accident. Misspell the tool name and the
+  hint says so: `nmaap scan the network` → *"did you mean nmap?"*.
+  An exit-127 rescue gives the same treatment to commands that don't
+  exist at all.
+- **`download X` means install X.** Give nlt a link and it curls the
+  file; give it a name (`download firefox`) and it installs the
+  package instead.
+- **Cheat sheets on demand.** `help with nmap`, `what is git`,
+  `how do i use rsync` — 34 tools (nmap, git, ssh, tar, ffmpeg,
+  systemctl, awk…) print a card: what it is, one quick command, a few
+  more, and where the docs live. No model needed, zero network.
+
 ## Personas
 
 | flag     | voice                                                |

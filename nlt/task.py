@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 
-from . import engine, risk, style
+from . import engine, risk, style, toolbox
 from .brain import chat as brain_chat
 from .brain import passthrough_task, pattern_tasks
 from .highlight import paint_cmd
@@ -122,6 +122,16 @@ def run_steps(p: dict, persona: Persona, model: str | None, cwd: str, *,
 
 def do_task(task: str, persona: Persona, model: str | None, *, dry: bool = False,
             assume_yes: bool = False, cwd: str = "", no_ai: bool = False) -> int:
+    card = toolbox.help_for(task)
+    if card:
+        say()
+        say(GLOW(f"✦ {card['tool']} — {card['what']}"))
+        say(OK(f"   {card['quick']}"))
+        for line in card["more"]:
+            say(MUTE("   " + line))
+        say(MUTE(f"   docs: {card['docs']}"))
+        say()
+        return 0
     plan = translate(task, persona, model, cwd, no_ai=no_ai)
     render_plan(plan, task, persona)
     if not plan["steps"]:

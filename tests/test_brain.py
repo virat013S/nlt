@@ -95,6 +95,12 @@ def test_passthrough_rejects_sentences():
         assert brain.passthrough_task(sentence) is None, sentence
 
 
+def test_passthrough_never_grabs_package_verbs():
+    # coreutils install exists on PATH, but these heads are English intent
+    for sentence in ("install firefoks", "download firefox", "setup git"):
+        assert brain.passthrough_task(sentence) is None, sentence
+
+
 def test_translate_passthrough_skips_brains():
     p = translate("git status", _stub_persona(), None, cwd="/tmp",
                   no_ai=True)
@@ -129,6 +135,70 @@ def test_pattern_system_families():
 def test_pattern_kill_never_guessed():
     steps, note = brain.pattern_tasks("stop the process")
     assert steps == [] and "process" in note
+
+
+# ---------------------------------------------------------------- toolbox --
+
+def test_spell_rescue_fixes_the_package():
+    from nlt import toolbox
+    pkg, note = toolbox.fix("firefoks")
+    assert pkg == "firefox" and "firefox" in note
+    exact, no_note = toolbox.fix("git")
+    assert exact == "git" and no_note == ""
+
+
+def test_help_cards():
+    from nlt import toolbox
+    card = toolbox.help_for("how do I use nmap")
+    assert card["tool"] == "nmap" and "-sn" in card["quick"]
+    assert toolbox.help_for("what is git")["tool"] == "git"
+    assert toolbox.help_for("make a folder") is None
+    assert toolbox.help_for("what is the weather") is None
+
+
+def test_suggest_note_ranks_real_names():
+    from nlt import toolbox
+    note = toolbox.suggest_note("nmaap scan the network")
+    assert "nmap" in note and "help with nmap" in note
+    assert toolbox.suggest_note("do a cartwheel") == ""
+    assert "firefox" in toolbox.suggest_note("how do i open firefoks")
+
+
+def test_install_typo_becomes_firefox():
+    steps, _ = brain.pattern_tasks("install firefoks")
+    assert steps and "firefox" in steps[0]["cmd"]
+    assert "assumed" in steps[0]["why"]
+
+
+def test_download_means_install_and_forgives_typos():
+    steps, _ = brain.pattern_tasks("download firefox")
+    assert steps and steps[0]["cmd"].endswith("firefox")
+    assert "pacman -S" in steps[0]["cmd"] or "apt install" in steps[0]["cmd"]
+    steps2, _ = brain.pattern_tasks("download firefoks")
+    assert steps2 and "firefox" in steps2[0]["cmd"]
+    steps3, note3 = brain.pattern_tasks("download the file")
+    assert not steps3 and "link" in note3
+
+
+def test_scan_tasks():
+    steps, _ = brain.pattern_tasks("nmap scan my network")
+    assert steps and steps[0]["cmd"].startswith("nmap -sn")
+    steps2, _ = brain.pattern_tasks("scan for open ports on localhost")
+    assert steps2 and steps2[0]["cmd"] == "nmap localhost"
+
+
+def test_exit_127_suggests_close_names():
+    ctx = Context(command="nmaap scan", status=127, cwd="/tmp")
+    v = diagnose(ctx, _stub_persona(), None, no_ai=True)
+    assert "did you mean" in v["cause"] and "nmap" in v["cause"]
+
+
+def test_help_flows_through_do_task(capsys):
+    from nlt import task as task_mod
+    code = task_mod.do_task("help with nmap", _stub_persona(), None,
+                            dry=True, assume_yes=True, no_ai=True)
+    out = capsys.readouterr().err
+    assert code == 0 and "nmap" in out and "docs" in out
 
 
 def test_pattern_steps_survive_normalize():
