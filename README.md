@@ -86,6 +86,16 @@ nlt history                         # everything you and nlt have done
 Keybinding: `ctrl-g` (runs `nlt rescue-last --print-only` and `eval`s the
 confirmed fix in your session), `alt-h` as an alternative.
 
+## Every command works
+
+Type **the command itself** — `git status`, `python script.py`,
+`./build.sh` — and nlt runs it as typed ("passthrough": no translation,
+no hallucination; the risk engine still gates rm/ push/sudo with a
+confirm). Natural sentences map onto the rest: folders, installs, git
+phrases, weather, battery, RAM, disk, logs, services, processes, greps,
+downloads, kill/sign-off tasks. Anything the pattern brain can't map,
+it hands back with a hint instead of guessing.
+
 ## Personas
 
 | flag     | voice                                                |

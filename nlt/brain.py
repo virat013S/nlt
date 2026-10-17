@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import urllib.request
 
 from .ollama import chat_json, pick_model, ping
@@ -166,7 +167,63 @@ _WHY = {
     "net": "reach-check the internet",
     "ports": "what's listening where",
     "edit": "opens in your $EDITOR",
+    "grep": "search inside files",
+    "tree": "the folder at a glance",
+    "git": "git does the thing",
+    "download": "pull it down with curl",
+    "svc": "systemctl the service",
+    "logs": "the latest journal lines",
+    "kill": "politely terminate the process",
+    "ps": "busiest processes first",
+    "mem": "RAM use, human units",
+    "df": "free space per filesystem",
+    "battery": "charge percentage",
+    "weather": "a quick look out the window",
+    "chmod": "make it executable",
 }
+
+# -- literal-command passthrough: type the command itself, run it as typed --
+
+FILLERS = frozenset((
+    "a", "an", "the", "my", "our", "their", "this", "that", "please",
+    "can", "could", "would", "will", "should", "shall", "do", "does", "did",
+    "is", "are", "was", "were", "you", "me", "it", "i", "we",
+    "for", "from", "with", "into", "in", "on", "at", "of", "to", "and", "or",
+    "folder", "file", "files", "directory", "show", "list", "tell",
+))
+
+BUILTIN_HEADS = frozenset((
+    "cd", "echo", "test", "pwd", "and", "or", "not", "if", "else", "end",
+    "for", "while", "begin", "function", "return", "switch", "case", "set",
+    "alias", "source", "history", "jobs", "bg", "fg", "eval", "exec", "wait",
+    "math", "string", "count", "contains", "random", "status", "type", "time",
+    "exit", "true", "false", "printf", "read", "argparse", "abbr", "builtin",
+))
+
+
+def passthrough_task(raw: str) -> dict | None:
+    """You typed a command, not a sentence — nlt runs it as written.
+
+    The step still passes the normal risk + confirm gates, so rm, git push
+    and sudo ask before they touch anything. This is how nlt 'gets every
+    command': anything on your PATH, typed exactly, needs no translation."""
+    raw = raw.strip()
+    if not raw or "\n" in raw or len(raw) > 400:
+        return None
+    words = raw.split()
+    if not words or len(words) > 40:
+        return None
+    base = words[0].rsplit("/", 1)[-1].lower()
+    if base in FILLERS:
+        return None
+    if (base not in BUILTIN_HEADS and shutil.which(words[0]) is None
+            and not words[0].startswith(("./", "/", "~/"))):
+        return None
+    if any(w.lower() in FILLERS for w in words[1:]):
+        return None
+    return {"steps": [{"cmd": raw,
+                       "why": "typed as-is — your command, no translation"}],
+            "note": "passthrough — you gave a command, not a sentence"}
 
 
 def _first_named_path(t: str) -> str:
@@ -251,6 +308,7 @@ def _arch_like() -> bool:
 def pattern_tasks(t: str) -> tuple[list[dict], str]:
     """English → fish, deterministically. Returns ([steps], note).
     Every generated step still passes the normal risk + confirm gates."""
+    orig = t.strip()
     t = " " + t.strip().lower() + " "
     d = _dir_of(t)
     name = _called(t)
@@ -277,6 +335,99 @@ def pattern_tasks(t: str) -> tuple[list[dict], str]:
             add(f"mkdir -p {d}; and echo \"{body or 'todo'}\" > {rel}", _WHY["makefile"])
         else:
             add(f"echo \"{body or 'todo'}\" > {fname}", _WHY["makefile"])
+
+    elif re.search(r"\b(executable|chmod|chown)\b", t):
+        m = re.search(
+            rf"\b(?:make|chmod)\s+(?:the\s+|my\s+)?({PATH_RX})\s+(?:file\s+)?executable",
+            t, re.IGNORECASE)
+        chmod_tgt = (m.group(1) if m and m.group(1).lower() not in STOPWORDS
+                     else _first_named_path(t))
+        add(f"chmod +x {chmod_tgt or 'THE-SCRIPT'}", _WHY["chmod"])
+
+    elif re.search(r"\b(grep|inside files?|in files?|file contents|containing)\b", t):
+        m = re.search(
+            rf"\b(?:grep|search|look)\b(?:\s+for)?\s+(?:the\s+)?({PATH_RX})",
+            t, re.IGNORECASE)
+        pat = m.group(1) if m and m.group(1).lower() not in STOPWORDS else ""
+        if pat:
+            cm = re.search(re.escape(pat), orig, re.IGNORECASE)
+            if cm:                       # keep the casing you typed
+                pat = cm.group(0)
+            add(f'grep -n --max-count=10 -r "{pat}" . 2>/dev/null | head -40',
+                _WHY["grep"])
+        else:
+            hint = "search for what? name the text or pattern"
+
+    elif re.search(r"\b(tree|structure)\b", t):
+        add("tree -L 2 2>/dev/null; or find . -maxdepth 2 -not -path '*/.*'",
+            _WHY["tree"])
+
+    elif re.search(r"\b(commit|push|pull|git)\b", t):
+        if re.search(r"\bcommit\b", t):
+            add('git add -A; and git commit -m "work in progress"', _WHY["git"])
+        elif re.search(r"\bpush\b", t):
+            add("git push", _WHY["git"])
+        elif re.search(r"\bpull\b", t):
+            add("git pull", _WHY["git"])
+        else:
+            add("git status -sb; and git log --oneline -5", _WHY["git"])
+
+    elif re.search(r"\b(download|wget)\b", t):
+        m = re.search(r"\b((?:https?://\S+|[\w.\-]+\.[a-z]{2,}(?:/\S*)?))", t)
+        url = m.group(1).rstrip(".,)!") if m else ""
+        if url:
+            add(f"curl -fLO {url}", _WHY["download"])
+        else:
+            hint = "download what? give me the link"
+
+    elif re.search(r"\b(services?|daemons?|systemctl|systemd)\b", t):
+        m = re.search(rf"\b({PATH_RX})\s+(?:services?|daemons?|units?)\b", t)
+        svc = m.group(1) if m and m.group(1).lower() not in STOPWORDS else ""
+        act = re.search(r"\b(start|stop|restart|enable|disable|status)\b", t)
+        if act and not svc:
+            m2 = re.search(
+                rf"\b(?:start|stop|restart|enable|disable|status)\b\s+(?:the\s+)?({PATH_RX})",
+                t)
+            svc = m2.group(1) if m2 and m2.group(1).lower() not in STOPWORDS else ""
+        if act and svc:
+            sudo = "" if act.group(1) == "status" else "sudo "
+            add(f"{sudo}systemctl {act.group(1)} {svc}", _WHY["svc"])
+        else:
+            add("systemctl --failed", _WHY["svc"])
+
+    elif re.search(r"\b(logs?|journal)\b", t):
+        m = re.search(rf"\b({PATH_RX})\s+logs?\b", t)
+        unit = m.group(1) if m and m.group(1).lower() not in STOPWORDS else ""
+        add(f"journalctl -n 40 --no-pager{(' -u ' + unit) if unit else ''}",
+            _WHY["logs"])
+
+    elif re.search(r"\b(kill|stop|terminate|killall|force quit)\b", t):
+        target = _tail_noun(t, r"\b(?:kill|stop|terminate|killall|force quit)\b")
+        if target and target not in ("process", "app", "program", "job",
+                                     "task", "service", "daemon"):
+            add(f"pkill -f {target}", _WHY["kill"])
+        else:
+            hint = "kill which one? name the process"
+
+    elif re.search(r"\b(processes|ps aux|cpu usage|what'?s running|running processes)\b", t):
+        add("ps -eo pid,pcpu,pmem,comm --sort=-pcpu | head -12", _WHY["ps"])
+
+    elif re.search(r"\b(ram|memory)\b", t):
+        add("free -h", _WHY["mem"])
+
+    elif re.search(r"\b(how much (space|disk)|space left|disk (free|usage)|how full|\bdf\b)", t):
+        add("df -h", _WHY["df"])
+
+    elif re.search(r"\b(battery|charge level|power level)\b", t):
+        add("cat /sys/class/power_supply/BAT*/capacity 2>/dev/null; "
+            "or echo no-battery", _WHY["battery"])
+
+    elif re.search(r"\b(weather|forecast)\b", t):
+        m = re.search(
+            rf"\b(?:weather|forecast)\b(?:\s+(?:in|at|for)\s+)?({PATH_RX})", t)
+        loc = m.group(1) if m and m.group(1).lower() not in STOPWORDS else ""
+        suffix = f"wttr.in/{loc}?format=3" if loc else "wttr.in?format=3"
+        add(f'curl -s "{suffix}"', _WHY["weather"])
 
     elif re.search(r"\b(copy|duplicate|backup)\b", t):
         m = re.search(

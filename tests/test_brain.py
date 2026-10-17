@@ -76,6 +76,61 @@ def test_unknown_sentence_hints_and_never_guesses():
     assert "pattern brain" in note
 
 
+# ------------------------------------------------------- passthrough commands
+
+def test_passthrough_runs_commands_as_typed():
+    got = brain.passthrough_task("git status")
+    assert got and got["steps"][0]["cmd"] == "git status"
+    got2 = brain.passthrough_task("echo hello world")
+    assert got2 and got2["steps"][0]["cmd"] == "echo hello world"
+    got3 = brain.passthrough_task("./build.sh --fast")
+    assert got3 and got3["steps"][0]["cmd"] == "./build.sh --fast"
+    assert brain.passthrough_task("") is None
+    assert brain.passthrough_task("not-a-real-cmd-xyz") is None
+
+
+def test_passthrough_rejects_sentences():
+    for sentence in ("make a folder", "list files", "copy the file to backup",
+                     "git push to origin", "build me a website please"):
+        assert brain.passthrough_task(sentence) is None, sentence
+
+
+def test_translate_passthrough_skips_brains():
+    p = translate("git status", _stub_persona(), None, cwd="/tmp",
+                  no_ai=True)
+    assert p["steps"][0]["cmd"] == "git status"
+    assert "passthrough" in p["note"]
+
+
+# ------------------------------------------------------------- wider families
+
+def test_pattern_system_families():
+    for task, needle in (
+        ("how much ram is free", "free -h"),
+        ("how much disk space is left", "df -h"),
+        ("battery level", "power_supply"),
+        ("weather in paris", "wttr.in/paris"),
+        ("what is the weather", "wttr.in?format=3"),
+        ("kill firefox", "pkill -f firefox"),
+        ("restart the ssh service", "systemctl restart ssh"),
+        ("show me the latest ssh logs", "journalctl -n 40 --no-pager -u ssh"),
+        ("commit everything", "git commit"),
+        ("push my changes", "git push"),
+        ("make script.sh executable", "chmod +x script.sh"),
+        ("search for TODO in files", 'grep -n --max-count=10 -r "TODO"'),
+        ("download https://example.com/x.tar.gz",
+         "curl -fLO https://example.com/x.tar.gz"),
+        ("what is using the most space", "du -sh"),
+    ):
+        steps, _ = brain.pattern_tasks(task)
+        assert any(needle in s["cmd"] for s in steps), (task, steps)
+
+
+def test_pattern_kill_never_guessed():
+    steps, note = brain.pattern_tasks("stop the process")
+    assert steps == [] and "process" in note
+
+
 def test_pattern_steps_survive_normalize():
     plan = brain.pattern_tasks("make a folder called rex")
     blob = {"steps": [{"cmd": c["cmd"], "why": c["why"]} for c in plan[0]],

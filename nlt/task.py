@@ -5,7 +5,7 @@ import os
 
 from . import engine, risk, style
 from .brain import chat as brain_chat
-from .brain import pattern_tasks
+from .brain import passthrough_task, pattern_tasks
 from .highlight import paint_cmd
 from .risk import is_interactive_bare
 from .speak import Persona
@@ -27,12 +27,16 @@ def translate(task: str, persona: Persona, model: str | None, cwd: str, *,
               no_ai: bool = False) -> dict:
     """Best available brain → normalized plan. model=None is fine: the chain
     tries local, then cloud, and the pattern brain is always there."""
-    system = persona.system + "\n\n" + TASK_SCHEMA
-    user = f"shell: fish\ncwd: {cwd or os.getcwd()}\ntask: {task}"
-    blob, label = brain_chat(system, user, preferred=model, no_ai=no_ai)
-    if blob is None:
-        psteps, note = pattern_tasks(task)
-        blob = {"steps": psteps, "note": note}
+    direct = passthrough_task(task)
+    if direct is not None:
+        blob, label = direct, "passthrough — commands run as typed"
+    else:
+        system = persona.system + "\n\n" + TASK_SCHEMA
+        user = f"shell: fish\ncwd: {cwd or os.getcwd()}\ntask: {task}"
+        blob, label = brain_chat(system, user, preferred=model, no_ai=no_ai)
+        if blob is None:
+            psteps, note = pattern_tasks(task)
+            blob = {"steps": psteps, "note": note}
     say(MUTE(f"(brain: {label})"))
     return _normalize(blob)
 
